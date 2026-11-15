@@ -7,6 +7,8 @@ Schul-Monitor zeigt Stunden- und Vertretungspläne aus **beste.schule** zusammen
 
 Schul-Monitor Handbuch (PDF): docs/Schul-Monitor_Handbuch.pdf
 
+**Nutzungserlaubnis:** Installation, Testbetrieb und sonstige Nutzung durch Dritte bedürfen der vorherigen schriftlichen Zustimmung von Robert Kettmann. Das gilt auch für Schulen und für nichtkommerzielle Nutzung.
+
 ## Installation unter Windows
 
 1. Das Repository über **Code → Download ZIP** herunterladen und entpacken.
