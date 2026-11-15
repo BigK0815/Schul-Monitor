@@ -4,6 +4,10 @@
 
 Schul-Monitor zeigt Stunden- und Vertretungspläne aus **beste.schule** zusammen mit Hinweisen und PDF-Aushängen. Die Einrichtung erfolgt in einer Windows-Anwendung, die Anzeige läuft im Browser.
 
+## Handbuch
+
+[Schul-Monitor Handbuch (PDF)](docs/Schul-Monitor_Handbuch.pdf)
+
 ## Installation unter Windows
 
 1. Das Repository über **Code → Download ZIP** herunterladen und entpacken.
