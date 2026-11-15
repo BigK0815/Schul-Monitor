@@ -3,7 +3,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from time import monotonic
@@ -14,6 +14,13 @@ BASE = 'https://beste.schule/api'
 # Historischer Datenordner: identisch mit verwaltung.py halten.
 CACHE_DIR = Path(os.environ.get('APPDATA', str(Path.home()))) / 'StundenplanBoard'
 SUBSTITUTION_SECONDS = 300
+
+
+def timetable_for_day(plans, day):
+    """Prefer the latest start date if published validity periods overlap."""
+    day = day.isoformat()
+    return next((plan for plan in plans
+                 if plan['valid_from'] <= day <= plan['valid_to']), None)
 
 
 def student_id(student):
@@ -76,24 +83,42 @@ class SchoolData:
                 temporary.unlink(missing_ok=True)
         self.snapshots[name] = (updated, data)
 
-    def timetable(self, now):
-        updated, saved = self.read('stundenplan-cache')
-        if updated and updated.date() == now.date():
+    def timetables(self, now, horizon=35):
+        name = 'stundenplan-versionen-cache'
+        updated, saved = self.read(name)
+        today = now.date()
+        end = today + timedelta(days=horizon)
+        if updated and updated.date() == today and saved['end'] >= end.isoformat():
             return saved
         if self.timetable_error is not None and monotonic() < self.timetable_retry_at:
             raise self.timetable_error
         try:
-            payload = self.get('/time-tables/current')
-            plan = payload.get('data', payload)
-            if not isinstance(plan, dict) or not isinstance(plan.get('lessons'), list):
-                raise ValueError('Unbekanntes Format des Stundenplans.')
-            self.write('stundenplan-cache', now, plan)
-        except (requests.RequestException, ValueError, AttributeError, OSError) as error:
+            start = today - timedelta(days=7)
+            plans = list(self.collection('/time-tables', {
+                'filter[range]': f'{start.isoformat()},{end.isoformat()}',
+                'include': 'lessons',
+            }))
+            for plan in plans:
+                for key in ('valid_from', 'valid_to'):
+                    plan[key] = date.fromisoformat(str(plan[key])[:10]).isoformat()
+                if plan['valid_from'] > plan['valid_to']:
+                    raise ValueError('Ungültiger Gültigkeitszeitraum im Grundstundenplan.')
+                if not isinstance(plan.get('lessons'), list):
+                    detail = self.get('/time-tables/' + str(plan['id']), {'include': 'lessons.times'})
+                    plan['lessons'] = detail['data']['lessons']
+                if not isinstance(plan['lessons'], list):
+                    raise ValueError('Fehlende Stunden im Grundstundenplan.')
+                if isinstance(plan.get('weeks'), str):
+                    plan['weeks'] = json.loads(plan['weeks']) if plan['weeks'] else []
+            plans.sort(key=lambda plan: plan['valid_from'], reverse=True)
+            saved = {'end': end.isoformat(), 'plans': plans}
+            self.write(name, now, saved)
+        except (requests.RequestException, ValueError, AttributeError, KeyError, TypeError, OSError) as error:
             self.timetable_error = error
             self.timetable_retry_at = monotonic() + SUBSTITUTION_SECONDS
             raise
         self.timetable_error = None
-        return plan
+        return saved
 
     def lesson_times(self, now):
         updated, saved = self.read('unterrichtszeiten-cache')

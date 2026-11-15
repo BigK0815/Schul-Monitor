@@ -31,7 +31,7 @@ Unter **API & Server → Server** **Mit Windows starten** einschalten und **Spei
 
 ## Datenabruf und lokale Speicherung
 
-Der reguläre Stundenplan wird einmal pro Kalendertag geladen. Die API wird alle fünf Minuten gezielt nach Vertretungen für die beiden angezeigten Schultage abgefragt. Wochenenden und im Stundenplan hinterlegte schulfreie Tage werden übersprungen. Fehlt ein Vertretungsplan, erscheint der reguläre Stundenplan für den betreffenden Tag.
+Die Grundstundenpläne werden täglich geladen und pro Anzeigedatum nach ihrem Gültigkeitszeitraum ausgewählt. Am Freitag kann unter **Morgen** bereits der neue Montagsplan erscheinen, wenn er in beste.schule hinterlegt ist. Die API wird alle fünf Minuten gezielt nach Vertretungen für die beiden angezeigten Schultage abgefragt. Wochenenden und im Stundenplan hinterlegte schulfreie Tage werden übersprungen. Fehlt ein Vertretungsplan, erscheint der reguläre Stundenplan für den betreffenden Tag.
 
 Die Gruppenzuordnung wird alle sieben Tage erneuert und kann unter **Klassen & Gruppen → Jetzt aktualisieren** manuell angestoßen werden. Schüler-IDs werden für den Abgleich im Arbeitsspeicher verwendet. Gespeichert werden die daraus ermittelten Zuordnungen und Jahrgangsangaben.
 

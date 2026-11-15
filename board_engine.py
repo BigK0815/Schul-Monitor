@@ -8,7 +8,7 @@ from threading import Lock
 from contextvars import ContextVar
 from werkzeug.local import LocalProxy
 
-from schuldaten import SchoolData
+from schuldaten import SchoolData, timetable_for_day
 from monitorprofile import DEFAULT_COLORS, monitor_colors
 from redaktion import ROOT, active_slides, announcement_html, logo_response
 
@@ -439,9 +439,8 @@ def resolve_moved_room(lesson, group, destination, regular_by_date):
     return lesson
 
 
-def visible_days(now=None, timetable=None, lesson_times=None):
+def visible_days(now, plans, end, lesson_times=None):
     """Two school days, advancing at configured cutoff."""
-    now = now or datetime.now()  # local clock of the school computer
     cursor = now.date()
     # Keep today's plan visible through the last configured lesson.
     cutoff = max([time(int(SETTINGS['cutoff_hour']), 0)] + [
@@ -449,11 +448,16 @@ def visible_days(now=None, timetable=None, lesson_times=None):
     ])
     if now.time() >= cutoff and cursor.weekday() < 5:
         cursor += timedelta(days=1)
-    # The API may encode its list of calendar dates as a string.
-    closed = set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b',
-                            str((timetable or {}).get('no_school_dates') or '')))
+    def closed_dates(plan):
+        return set(re.findall(r'\b\d{4}-\d{2}-\d{2}\b', str(plan.get('no_school_dates') or '')))
+
+    closures = {id(plan): closed_dates(plan) for plan in plans}
+    all_closures = set().union(*closures.values())
     result = []
-    while len(result) < 2:
+    # Leave room to resolve moves in the week after the last visible day.
+    while len(result) < 2 and cursor <= end - timedelta(days=7):
+        plan = timetable_for_day(plans, cursor)
+        closed = closures[id(plan)] if plan is not None else all_closures
         if cursor.weekday() < 5 and cursor.isoformat() not in closed:
             result.append(cursor)
         cursor += timedelta(days=1)
@@ -513,7 +517,7 @@ def class_grade(name, grades=None):
     return int(match[1]) if match else None
 
 
-def build_week(days, timetable, substitutions, automatic_mapping, grades=None):
+def build_week(days, plans, substitutions, automatic_mapping, grades=None):
     mapping = automatic_mapping
     if mapping is None:
         mapping = SETTINGS.get('group_mappings') or {}
@@ -524,10 +528,12 @@ def build_week(days, timetable, substitutions, automatic_mapping, grades=None):
         configured.update(str(v).strip() for v in targets if str(v).strip())
     classes = {name: {} for name in configured}
     if automatic_mapping is None and not classes:
-        for item in timetable['lessons']:
-            name = ident(item.get('group'))
-            if re.fullmatch(r'(?:10|[5-9])/\d+', name):
-                classes.setdefault(name, {})
+        for day in days:
+            plan = timetable_for_day(plans, day) or {}
+            for item in plan.get('lessons', []):
+                name = ident(item.get('group'))
+                if re.fullmatch(r'(?:10|[5-9])/\d+', name):
+                    classes.setdefault(name, {})
 
     hidden = set(SETTINGS['hidden_groups'])
     excluded_grades = set(SETTINGS['hidden_grades'])
@@ -537,41 +543,33 @@ def build_week(days, timetable, substitutions, automatic_mapping, grades=None):
         automatic_mapping = {group: [name for name in targets if name in classes]
                              for group, targets in automatic_mapping.items() if group not in hidden}
 
-    # The published timetable explicitly maps ISO calendar weeks to A/B types.
-    # Never infer the week type from the parity of the week number: holidays
-    # and timetable changes can break that assumption.
-    week_types = {}
-    for record in timetable.get('weeks', []):
-        try:
-            key = (int(record['year']), int(record['nr']))
-        except (KeyError, TypeError, ValueError):
-            continue
-        week_types[key] = set(record.get('types') or [])
-
-    def applicable(item, school_day):
-        iso_year, iso_week, _ = school_day.isocalendar()
-        active = week_types.get((iso_year, iso_week))
-        # Unknown week is not silently assumed to be A or B.
-        if not active:
-            return False
-        return bool(active.intersection(item.get('weeks') or ['A', 'B']))
-
-    # Keep lessons by their original group first. Only afterwards expand
-    # each course group into every participating home class.
-    regular = {}
-    # Also index nearby regular days to find cross-day moves.
-    reference_days = [min(days) + timedelta(days=i) for i in range(-7, (max(days)-min(days)).days + 8)]
-    regular_by_date = {d.isoformat(): {} for d in reference_days}
-    for item in timetable.get('lessons', []):
-        group = ident(item.get('group'))
-        if group in hidden or not target_classes(group, classes, automatic_mapping):
-            continue
-        lesson = details(item)
-        if 1 <= lesson['weekday'] <= 5 and 0 <= lesson['nr'] <= 10:
-            regular.setdefault((group, lesson['weekday'], lesson['nr']), []).append(lesson)
-            for d in reference_days:
-                if d.isoweekday() == lesson['weekday'] and applicable(item, d):
-                    regular_by_date[d.isoformat()].setdefault((group, lesson['weekday'], lesson['nr']), []).append(lesson)
+    # Index nearby days for cross-day moves, using each day's own plan and A/B week.
+    regular_by_date = {}
+    reference_day = min(days) - timedelta(days=7)
+    while reference_day <= max(days) + timedelta(days=7):
+        slots = {}
+        plan = timetable_for_day(plans, reference_day) or {}
+        iso_year, iso_week, weekday = reference_day.isocalendar()
+        active = set()
+        for record in plan.get('weeks') or []:
+            try:
+                key = (int(record['year']), int(record['nr']))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if key == (iso_year, iso_week):
+                active = set(record.get('types') or [])
+        if active and weekday <= 5:
+            for item in plan.get('lessons', []):
+                if not active.intersection(item.get('weeks') or ['A', 'B']):
+                    continue
+                group = ident(item.get('group'))
+                if group in hidden or not target_classes(group, classes, automatic_mapping):
+                    continue
+                lesson = details(item)
+                if lesson['weekday'] == weekday and 0 <= lesson['nr'] <= 10:
+                    slots.setdefault((group, weekday, lesson['nr']), []).append(lesson)
+        regular_by_date[reference_day.isoformat()] = slots
+        reference_day += timedelta(days=1)
 
     # A published substitution day replaces the regular lessons for that day.
     # Retain multiple entries, including parallel courses and split groups.
@@ -726,17 +724,23 @@ def refresh_board():
     with lock:
         source = source_for()
         now = datetime.now()
-        timetable = source.timetable(now)
         lesson_times = source.lesson_times(now)
-        days = visible_days(now, timetable, lesson_times)
+        for horizon in (35, 90):
+            timetables = source.timetables(now, horizon)
+            plans = timetables['plans']
+            days = visible_days(now, plans, date.fromisoformat(timetables['end']), lesson_times)
+            if len(days) == 2:
+                break
+        else:
+            raise ValueError('Im geladenen Zeitraum wurden keine zwei Anzeigetage gefunden.')
         updated, mapping = source.group_snapshot(now)
         substitutions = source.substitution_days(days)
-        key = (now.date(), tuple(days), updated, tuple(stamp for stamp, _ in substitutions))
+        key = (now.date(), tuple(days), timetables['end'], updated, tuple(stamp for stamp, _ in substitutions))
         monitor_id = SETTINGS.get('id', 1)
         cached_key, cached_data = cache.get(monitor_id, (None, None))
         if cached_key != key:
             published = [day for _, day in substitutions if day is not None]
-            data = build_week(days, timetable, published, mapping, source.read('jahrgaenge-cache')[1])
+            data = build_week(days, plans, published, mapping, source.read('jahrgaenge-cache')[1])
             data['lesson_times'] = lesson_times
             cache[monitor_id] = (key, data)
             return data
