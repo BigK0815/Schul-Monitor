@@ -155,7 +155,15 @@ function setupEditor() {
     }
     document.querySelectorAll('[data-command]').forEach(button => {
         button.onmousedown = event => event.preventDefault();
-        button.onclick = () => format(button.dataset.command);
+        button.onclick = () => {
+            if (button.dataset.imageAlign && selectedImage && edit.contains(selectedImage)) {
+                selectedImage.dataset.align = button.dataset.imageAlign;
+                positionHandle();
+                schedule();
+            } else {
+                format(button.dataset.command);
+            }
+        };
     });
     $('family').onchange = () => format('fontName', $('family').value);
     $('color').onchange = () => format('foreColor', $('color').value);
@@ -182,6 +190,9 @@ function setupEditor() {
         positionHandle();
     }
     edit.onclick = event => selectImage(event.target instanceof HTMLImageElement ? event.target : null);
+    edit.addEventListener('keydown', event => {
+        if (event.key.startsWith('Arrow') || event.key === 'Escape') selectImage(null);
+    });
     edit.onscroll = positionHandle;
     handle.onpointerdown = event => {
         event.preventDefault();

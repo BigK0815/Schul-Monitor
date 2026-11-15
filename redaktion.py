@@ -14,7 +14,7 @@ from pathlib import Path
 
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
-from flask import Flask, abort, jsonify, render_template, request, session
+from flask import Flask, abort, jsonify, render_template, request, send_file, session
 from PIL import Image, ImageOps
 
 from schuldaten import CACHE_DIR
@@ -82,6 +82,8 @@ def clean_html(html):
         if name == 'style':
             return True
         if tag == 'img':
+            if name == 'data-align':
+                return value in {'left', 'center', 'right'}
             return name == 'alt' or (name == 'src' and bool(re.fullmatch(
                 r'data:image/webp;base64,[A-Za-z0-9+/=]+', value)))
         return False
@@ -92,7 +94,13 @@ def clean_html(html):
     }, attributes=attributes, protocols={'data'}, css_sanitizer=STYLES, strip=True)
 
 
-def editor_app(password, profiles):
+def logo_response(custom_logo=''):
+    default = ROOT / 'schullogo.png'
+    logo = Path(custom_logo).expanduser() if custom_logo else default
+    return send_file(logo if logo.is_file() else default, mimetype='image/png', max_age=0)
+
+
+def editor_app(password, profiles, school_logo=''):
     monitors = [{key: item[key] for key in ('id', 'name', 'board_width', 'board_height', 'info_width')}
                 for item in profiles]
     monitor_ids = {item['id'] for item in monitors}
@@ -105,7 +113,7 @@ def editor_app(password, profiles):
     def headers(response):
         response.headers.update({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
                                  'X-Frame-Options': 'DENY',
-                                 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
+                                 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
         return response
 
     @app.errorhandler(400)
@@ -115,6 +123,10 @@ def editor_app(password, profiles):
     @app.errorhandler(413)
     def error(exc):
         return jsonify(error=exc.description), exc.code
+
+    @app.get('/assets/schullogo.png')
+    def school_logo_asset():
+        return logo_response(school_logo)
 
     @app.get('/')
     def home():

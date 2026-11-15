@@ -8,15 +8,16 @@ import threading
 import tkinter as tk
 import webbrowser
 from pathlib import Path
-from tkinter import ttk, messagebox, filedialog, font
+from tkinter import ttk, messagebox, filedialog, font, colorchooser
 
 import keyring
 import requests
+from PIL import Image, ImageTk
 from waitress import create_server
 import board_engine
 import updater
 from redaktion import editor_app
-from monitorprofile import FIELDS, default_profile, load_profiles, validate_profiles
+from monitorprofile import DEFAULT_COLORS, FIELDS, default_profile, load_profiles, monitor_colors, validate_profiles
 from verwaltungsstil import SettingsViewport, apply_style, card, toggle, flow_buttons
 
 if os.name == 'nt':
@@ -129,7 +130,7 @@ class Window:
         self.pages = {}
         self.nav_buttons = {}
         self.nav_markers = {}
-        for name in ('Allgemein', 'API & Server', 'Anzeige & PDFs', 'Klassen & Gruppen'):
+        for name in ('Allgemein', 'API & Server', 'Anzeige & PDFs', 'Klassen & Gruppen', 'Farben'):
             page = ttk.Frame(self.viewport.content, padding=12)
             self.pages[name] = page
             ttk.Label(page, text=name, style='Page.TLabel').pack(anchor='w', pady=(0, 16))
@@ -210,12 +211,16 @@ class Window:
         self.monitor_panel = ttk.Frame(monitor, style='Card.TFrame')
         self.monitor_panel.pack(fill='x', pady=8)
         self.profile_vars = []
+        self.profile_colors = []
         for number in range(1, 11):
             model = {**default_profile(number), **(profiles[number-1] if number <= len(profiles) else {})}
+            self.profile_colors.append(monitor_colors(model))
+            model.pop('colors', None)
             self.profile_vars.append({
                 key: tk.StringVar(value=','.join(map(str, value)) if isinstance(value, list) else str(value))
                 for key, value in model.items()
             })
+        self.build_color_page(self.pages['Farben'])
         count_box.bind('<<ComboboxSelected>>', lambda event: self.select_monitor())
         self.monitor_selection.bind('<<ComboboxSelected>>', lambda event: self.show_monitor())
         self.select_monitor()
@@ -553,6 +558,108 @@ class Window:
         path = filedialog.askopenfilename(title='Schullogo auswählen', filetypes=[('PNG-Bilder','*.png')])
         if path: self.school_logo.set(path)
 
+    def build_color_page(self, page):
+        selector = ttk.Frame(page)
+        selector.pack(fill='x', pady=(0, 12))
+        ttk.Label(selector, text='Monitorprofil').pack(side='left', padx=(0, 8))
+        self.color_selection = ttk.Combobox(selector, state='readonly', width=24)
+        self.color_selection.pack(side='left')
+        self.color_selection.bind('<<ComboboxSelected>>', self.refresh_color_preview)
+
+        layout = ttk.Frame(page)
+        layout.pack(fill='x')
+        layout.columnconfigure(1, weight=1)
+        left = ttk.Frame(layout)
+        left.grid(row=0, column=0, sticky='new', padx=(0, 12))
+        right = ttk.Frame(layout)
+        right.grid(row=0, column=1, sticky='new')
+        choices = ttk.Frame(card(left, 'Farbeinstellungen'), style='Card.TFrame')
+        choices.pack(fill='x')
+        preview = card(right, 'Vorschau')
+        for col, label in enumerate(('Bereich', 'Hintergrund', 'Schrift')):
+            ttk.Label(choices, text=label, style='Card.TLabel').grid(row=0, column=col, padx=4)
+        self.color_buttons = {}
+        for row, (label, keys) in enumerate((
+            ('Schulname', ('title_bg', 'title_fg')), ('Klassenköpfe', ('class_bg', 'class_fg')),
+            ('Tagesbalken', ('day_bg', 'day_fg')), ('Vertretung', ('changed',)),
+            ('Gruppe', ('coupled',)), ('Aktuelle Stunde', ('current',)),
+        ), 1):
+            ttk.Label(choices, text=label, style='Card.TLabel').grid(row=row, column=0, sticky='w', pady=4)
+            for col, key in enumerate(keys, 1):
+                button = tk.Button(choices, width=8, relief='flat',
+                                   command=lambda field=key: self.choose_color(field))
+                button.grid(row=row, column=col, padx=4, sticky='ew')
+                self.color_buttons[key] = button
+        ttk.Button(choices, text='Standardfarben wiederherstellen', command=self.reset_colors).grid(
+            row=7, column=0, columnspan=3, sticky='w', pady=(12, 0))
+
+        self.color_preview = tk.Canvas(preview, width=280, height=248, highlightthickness=0,
+                                       background='#eaf3fc')
+        self.color_preview.pack(fill='x')
+        def arrange_preview(event):
+            beside = event.width >= left.winfo_reqwidth() + 310
+            right.grid_configure(row=0 if beside else 1, column=1 if beside else 0,
+                                 columnspan=1 if beside else 2)
+
+        layout.bind('<Configure>', arrange_preview)
+        self.color_preview.bind('<Configure>', self.refresh_color_preview)
+        with Image.open(Path(__file__).with_name('schullogo.png')) as logo:
+            logo.thumbnail((30, 30))
+            self.preview_logo = ImageTk.PhotoImage(logo, master=self.root)
+
+    def choose_color(self, key):
+        palette = self.profile_colors[self.color_selection.current()]
+        _, color = colorchooser.askcolor(color=palette[key], parent=self.root, title='Farbe auswählen')
+        if color:
+            palette[key] = color.lower()
+            self.refresh_color_preview()
+
+    def reset_colors(self):
+        self.profile_colors[self.color_selection.current()] = DEFAULT_COLORS.copy()
+        self.refresh_color_preview()
+
+    def refresh_color_preview(self, _event=None):
+        index = self.color_selection.current()
+        if index < 0:
+            return
+        colors = self.profile_colors[index]
+        for key, button in self.color_buttons.items():
+            color = colors[key]
+            red, green, blue = (int(color[i:i+2], 16) for i in (1, 3, 5))
+            ink = 'black' if .299 * red + .587 * green + .114 * blue > 130 else 'white'
+            button.configure(text=color, bg=color, fg=ink, activebackground=color, activeforeground=ink)
+        canvas = self.color_preview
+        canvas.delete('all')
+        width = max(canvas.winfo_width(), 200)
+        canvas.create_rectangle(0, 0, width, 43, fill=colors['title_bg'], width=0)
+        canvas.create_image(8, 21, image=self.preview_logo, anchor='w')
+        canvas.create_text(45, 21, text='Musterschule', fill=colors['title_fg'],
+                           anchor='w', font=('Segoe UI', 12, 'bold'))
+        for top, day, rows in (
+            (51, 'Heute', (('MA', 'DE', 'current'), ('EN', 'BIO', 'changed'), ('SP', 'WE', 'coupled'))),
+            (151, 'Morgen', (('DE', 'MA', None), ('BIO', 'KU', None), ('MU', 'EN', None))),
+        ):
+            canvas.create_rectangle(6, top, 33, top+90, fill=colors['day_bg'], width=0)
+            canvas.create_text(19, top+44, text=day, angle=90, fill=colors['day_fg'])
+            avail = width-66
+            for col, label in enumerate(('5/1', '6/1')):
+                left = 58 + col * avail/2
+                right = left + avail/2 - 3
+                canvas.create_rectangle(left, top, right, top+20, fill=colors['class_bg'], width=0)
+                canvas.create_text((left+right)/2, top+10, text=label, fill=colors['class_fg'])
+                for row, (first, second, mark) in enumerate(rows):
+                    y = top + 20 + row*23
+                    color = colors[mark] if mark and (col == 0 or mark == 'current') else (
+                        '#e8f5ff' if row % 2 else '#ffffff')
+                    canvas.create_rectangle(left, y, right, y+23, fill=color, outline='#b4cce0')
+                    canvas.create_text(left+5, y+11, text=(first, second)[col], anchor='w', fill='#14263a')
+            for row, (_, _, mark) in enumerate(rows):
+                y = top + 20 + row*23
+                canvas.create_rectangle(37, y, 56, y+23,
+                                        fill=colors['current'] if mark == 'current' else '#ffffff',
+                                        outline='#b4cce0')
+                canvas.create_text(46, y+11, text=str(row+1), fill='#14263a')
+
     def select_monitor(self):
         index = max(0, self.monitor_selection.current())
         count = int(self.monitor_count.get())
@@ -562,11 +669,16 @@ class Window:
 
     def update_monitor_names(self, _event=None):
         index = self.monitor_selection.current()
-        self.monitor_selection.configure(values=[
+        names = [
             f"{i+1} · {model['name'].get()}" for i, model in enumerate(
                 self.profile_vars[:int(self.monitor_count.get())])
-        ])
-        self.monitor_selection.current(max(0, min(index, int(self.monitor_count.get())-1)))
+        ]
+        self.monitor_selection.configure(values=names)
+        self.monitor_selection.current(max(0, min(index, len(names)-1)))
+        color_index = self.color_selection.current()
+        self.color_selection.configure(values=names)
+        self.color_selection.current(max(0, min(color_index, len(names)-1)))
+        self.refresh_color_preview()
 
     def show_monitor(self):
         for child in self.monitor_panel.winfo_children():
@@ -600,6 +712,7 @@ class Window:
         for index, model in enumerate(self.profile_vars[:int(self.monitor_count.get())], 1):
             profile = {key: variable.get() for key, variable in model.items()}
             profile['id'] = index
+            profile['colors'] = self.profile_colors[index - 1].copy()
             for key, minimum, maximum in (('visible_periods', 0, 10), ('hidden_grades', 1, 13)):
                 values = sorted({int(value.strip()) for value in profile[key].split(',') if value.strip()})
                 if any(not minimum <= value <= maximum for value in values):
@@ -712,7 +825,7 @@ class Window:
                 password = keyring.get_password(SERVICE, EDITOR_ACCOUNT)
                 if not password:
                     raise ValueError('Bitte ein Redaktionspasswort speichern.')
-                editor = editor_app(password, profiles)
+                editor = editor_app(password, profiles, self.config['school_logo'])
                 self.editor_server = create_server(editor, host=host, port=self.config['editor_port'],
                                                    threads=4, max_request_body_size=12 * 1024 * 1024)
         except Exception as error:

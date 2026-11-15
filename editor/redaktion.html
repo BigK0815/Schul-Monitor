@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Schul-Monitor · Redaktion</title>
+<link rel="icon" type="image/png" href="/assets/schullogo.png">
 <link rel="stylesheet" href="/editor/redaktion.css"><link rel="stylesheet" href="/editor/meldung.css">
 <body data-csrf="{{ csrf }}" data-monitors="{{ monitors|tojson|forceescape }}">
-<header><strong>Schul-Monitor · Redaktion</strong>{% if authenticated %}<button id="logout">Abmelden</button>{% endif %}</header>
+<header><strong class="brand"><img src="/assets/schullogo.png" alt="">Schul-Monitor · Redaktion</strong>{% if authenticated %}<button id="logout">Abmelden</button>{% endif %}</header>
 {% if authenticated %}
 <main>
 <section class="card">
@@ -19,7 +20,7 @@
 <select id="size" aria-label="Schriftgröße">{% for n in [12,14,16,18,20,24,28,32,36,42,48,56,64,72] %}<option {% if n == 24 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
 <button data-command="bold" title="Fett"><b>F</b></button><button data-command="italic" title="Kursiv"><i>K</i></button><button data-command="underline" title="Unterstreichen"><u>U</u></button>
 <input id="color" type="color" aria-label="Textfarbe" value="#14263a">
-<button data-command="justifyLeft">Links</button><button data-command="justifyCenter">Mittig</button><button data-command="justifyRight">Rechts</button>
+<button data-command="justifyLeft" data-image-align="left">Links</button><button data-command="justifyCenter" data-image-align="center">Mittig</button><button data-command="justifyRight" data-image-align="right">Rechts</button>
 <button data-command="insertUnorderedList">Liste</button><button data-command="insertOrderedList">Nummerierung</button>
 <button data-command="undo" title="Rückgängig">↶</button><button data-command="redo" title="Wiederholen">↷</button>
 <button data-command="removeFormat">Format löschen</button>

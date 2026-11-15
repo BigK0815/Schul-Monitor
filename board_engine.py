@@ -9,7 +9,8 @@ from contextvars import ContextVar
 from werkzeug.local import LocalProxy
 
 from schuldaten import SchoolData
-from redaktion import ROOT, active_slides, announcement_html
+from monitorprofile import DEFAULT_COLORS, monitor_colors
+from redaktion import ROOT, active_slides, announcement_html, logo_response
 
 from flask import Flask, jsonify, render_template_string, Response, abort, send_file
 
@@ -55,17 +56,18 @@ def update_groups(token):
 
 
 HTML = '''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>__SCHOOL_NAME__ · Stundenplan</title>
+<link rel="icon" type="image/png" href="/assets/schullogo.png">
 <link rel="stylesheet" href="/assets/meldung.css">
 <style>
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{font-family:Arial,'Segoe UI',sans-serif;color:#14263a;background:#eaf3fc}
-:root{--navy:#103d61;--ink:#123651;--grid:#b4cce0;--soft:#e8f3fc;--board-gap:clamp(12px,1.5vw,28px);--font:clamp(9px,.86vw,17px);--small:clamp(7px,.7vw,14px)}
-header{height:clamp(54px,8.4vh,90px);background:linear-gradient(110deg,#073c60,#0c3455);display:flex;align-items:center;padding:5px clamp(10px,1.4vw,25px);gap:clamp(9px,1.2vw,22px);color:white}
+:root{__COLOR_VARS__--navy:#103d61;--ink:#123651;--grid:#b4cce0;--soft:#e8f3fc;--board-gap:clamp(12px,1.5vw,28px);--font:clamp(9px,.86vw,17px);--small:clamp(7px,.7vw,14px)}
+header{height:clamp(54px,8.4vh,90px);background:var(--title-bg);display:flex;align-items:center;padding:5px clamp(10px,1.4vw,25px);gap:clamp(9px,1.2vw,22px);color:var(--title-fg)}
 header img{height:clamp(44px,7.6vh,80px);width:auto;max-width:8vw;object-fit:contain;background:#fff;border-radius:8px;padding:3px}
 header h1{font-size:clamp(17px,2.35vw,43px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;font-weight:700;letter-spacing:.1px}
 #clock{margin-left:auto;white-space:nowrap;font-size:clamp(12px,1.45vw,27px);font-weight:600}
 main{height:calc(100dvh - clamp(54px,8.4vh,90px));display:grid;grid-template-columns:minmax(0,1fr) var(--info-width,33vw);gap:var(--board-gap);padding:clamp(6px,.8vw,14px)}
 #left{display:flex;flex-direction:column;min-width:0;min-height:0;gap:clamp(5px,.65vh,10px)}
-.date-head{display:flex;align-items:center;justify-content:center;background:var(--navy);color:#fff;border-radius:7px;font-weight:700;font-size:clamp(12px,1.35vw,25px);white-space:nowrap;overflow:hidden;writing-mode:vertical-rl;rotate:180deg}
+.date-head{display:flex;align-items:center;justify-content:center;background:var(--day-bg);color:var(--day-fg);border-radius:7px;font-weight:700;font-size:clamp(12px,1.35vw,25px);white-space:nowrap;overflow:hidden;writing-mode:vertical-rl;rotate:180deg}
 #daynotes{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--day-gap);flex:0 0 auto;min-width:0}
 #daynotes.visible{display:grid}
 .day-note{height:clamp(25px,3.5vh,38px);display:flex;align-items:center;gap:7px;padding:2px 9px;background:#dcecff;color:#123d64;border:1px solid #bbd7f5;border-radius:6px;min-width:0;font-size:clamp(10px,.9vw,17px);font-weight:600}
@@ -80,7 +82,7 @@ main{height:calc(100dvh - clamp(54px,8.4vh,90px));display:grid;grid-template-col
 .hour-column .hour{background:#fff;border:1px solid var(--grid);display:flex;align-items:center;justify-content:center;font-size:var(--font);font-weight:700;min-height:0}
 .class-grid{display:grid;grid-template-columns:repeat(var(--class-count),minmax(0,1fr));gap:clamp(2px,.25vw,5px);min-height:0;min-width:0}
 .class-col{display:grid;grid-template-rows:clamp(24px,4.3vh,41px) repeat(var(--period-count,8),minmax(0,1fr));min-width:0;min-height:0;overflow:hidden}
-.class-name{background:var(--navy);color:white;text-align:center;font-size:clamp(11px,1.22vw,23px);font-weight:700;display:flex;align-items:center;justify-content:center;min-width:0;border-radius:5px 5px 0 0}
+.class-name{background:var(--class-bg);color:var(--class-fg);text-align:center;font-size:clamp(11px,1.22vw,23px);font-weight:700;display:flex;align-items:center;justify-content:center;min-width:0;border-radius:5px 5px 0 0}
 .slot{border:1px solid var(--grid);border-top:0;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:hidden;background:#fff;text-align:center}
 /* Jede Stunde bekommt über beide Tage und die Stundennummer dieselbe Zeilenfarbe. */
 .hour-column .hour:nth-child(odd){background:#fff}.hour-column .hour:nth-child(even){background:#e8f5ff}
@@ -93,13 +95,13 @@ main{height:calc(100dvh - clamp(54px,8.4vh,90px));display:grid;grid-template-col
 .detail{flex:1 1 auto;min-width:0;text-align:left}
 .compact{align-items:flex-start;text-align:left;padding-left:4px}
 /* Gekoppelte Kurse erkennbar, ohne die Zeilenstreifen zu überdecken. */
-.slot.coupled:not(.changed):not(.canceled){background:#cdebf8}
+.slot.coupled:not(.changed):not(.canceled){background:var(--coupled)}
 
 .mini,.compact{height:100%;width:100%;min-width:0;min-height:0;display:flex;align-items:center;justify-content:space-evenly;gap:2px;padding:0 2px;overflow:hidden}
 .subject,.compact strong{font-size:var(--font);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;line-height:1.05}
 .detail,.compact small{font-size:var(--small);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.05}
 .compact{flex-direction:column;justify-content:center}.compact strong,.compact small{max-width:100%}
-.changed{background:#ffedbf!important}.canceled{background:#ffd6dc!important}.slot.canceled{position:relative}.cancel-cross{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.changed{background:var(--changed)!important}.canceled{background:#ffd6dc!important}.slot.canceled{position:relative}.cancel-cross{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
 #infoboard{display:flex;flex-direction:column;min-width:0;min-height:0;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px #a4bfd144}
 #infohead{height:clamp(30px,5vh,50px);flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--navy);color:white;border-radius:7px;font-weight:700;font-size:clamp(12px,1.35vw,25px)}
 #infonote{display:none;width:100%;height:100%;padding:clamp(12px,1.5vw,28px);flex-direction:column;align-items:stretch;justify-content:flex-start;text-align:left;gap:clamp(12px,2vh,26px);background:#f2f8ff;color:#123d64;overflow:hidden;box-sizing:border-box}
@@ -127,12 +129,10 @@ main{height:calc(100dvh - clamp(54px,8.4vh,90px));display:grid;grid-template-col
 .slot .detail{font-weight:400;flex:0 0 auto;min-width:0;max-width:none;overflow:visible;text-overflow:clip;white-space:nowrap}
 .slot .mini.wrap{flex-direction:column;align-items:flex-start;justify-content:center;gap:0}
 .slot .mini.wrap .subject,.slot .mini.wrap .detail{max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.slot.coupled:not(.changed):not(.canceled){background:#cdebf8}
-.slot.changed{background:#ffedbf!important}.slot.canceled{background:#ffd6dc!important}
-.slot.current-period:not(.canceled),.hour-column .hour.current-period{background:#79e64e!important}
+.slot.current-period:not(.canceled),.hour-column .hour.current-period{background:var(--current)!important}
 </style></head><body>
 <header><img src="/assets/schullogo.png" alt="Schullogo"><h1>__SCHOOL_NAME__</h1><div id="clock"></div></header>
-<main><div id="left"><div id="board"></div></div><aside id="infoboard"><div id="infohead">Infos &amp; Termine</div><div id="infocontent"><div id="infonote"></div><div id="infoannouncement" class="meldung"></div><img id="infoimage" alt="Informationen aus PDF"><div id="infoempty">Keine PDF-Dateien im Info-Ordner</div></div></aside></main><div id="fullscreen" class="meldung"></div><div id="copyright">(c) 2026 Robert Kettmann</div>
+<main><div id="left"><div id="board"></div></div><aside id="infoboard"><div id="infohead">Infos &amp; Termine</div><div id="infocontent"><div id="infonote"></div><div id="infoannouncement" class="meldung"></div><img id="infoimage" alt="Informationen aus PDF"><div id="infoempty">Keine PDF-Dateien im Info-Ordner</div></div></aside></main><div id="fullscreen" class="meldung"></div><div id="copyright">© 2026 Robert Kettmann</div>
 <script>
 const BOARD_SETTINGS=__BOARD_SETTINGS_JSON__;
 let data=null,index=0,lastChange=Date.now(),coursePhase=0,notePhase=0;
@@ -701,7 +701,12 @@ def home():
         'pdf_seconds': int(SETTINGS['pdf_seconds']),
     }
     from markupsafe import escape
-    html = HTML.replace('__BOARD_SETTINGS_JSON__', json.dumps(client_settings))
+    colors = monitor_colors(SETTINGS)
+    if colors['title_bg'] == DEFAULT_COLORS['title_bg']:
+        colors['title_bg'] = 'linear-gradient(110deg,#073c60,#0c3455)'
+    color_vars = ''.join(f"--{key.replace('_', '-')}:{value};" for key, value in colors.items())
+    html = HTML.replace('__COLOR_VARS__', color_vars)
+    html = html.replace('__BOARD_SETTINGS_JSON__', json.dumps(client_settings))
     html = html.replace('__SCHOOL_NAME__', str(escape(SETTINGS.get('school_name') or 'Musterschule')))
     html = html.replace('<main>', f'<main style="--info-width:{int(SETTINGS['info_width'])}vw">', 1)
     return render_template_string(html)
@@ -709,10 +714,7 @@ def home():
 @app.get('/assets/schullogo.png')
 def school_logo():
     custom = str(SETTINGS.get('school_logo') or '').strip()
-    logo = Path(custom).expanduser() if custom else Path(__file__).with_name('schullogo.png')
-    if not logo.is_file():
-        logo = Path(__file__).with_name('schullogo.png')
-    return send_file(logo, mimetype='image/png', max_age=0)
+    return logo_response(custom)
 
 def refresh_board():
     with lock:

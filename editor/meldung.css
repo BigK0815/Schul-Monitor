@@ -3,3 +3,6 @@
 .meldung img{display:block;max-width:100%;height:auto}
 .meldung h1,.meldung h2,.meldung h3,.meldung p{margin:0 0 .65em}
 .meldung blockquote{margin:0 0 .65em;padding-left:.65em;border-left:3px solid #c9dff3}
+.meldung img[data-align="left"]{margin-inline:0 auto}
+.meldung img[data-align="center"]{margin-inline:auto}
+.meldung img[data-align="right"]{margin-inline:auto 0}

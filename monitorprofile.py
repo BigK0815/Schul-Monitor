@@ -1,5 +1,6 @@
 """Stable monitor identities and profile settings."""
 from pathlib import Path
+import re
 
 FIELDS = (
     ('port', 'Port', 5001, 1024, 65535),
@@ -13,6 +14,26 @@ FIELDS = (
     ('pdf_seconds', 'Aushangwechsel (Sek.)', 12, 2, 3600),
     ('cutoff_hour', 'Frühester Tageswechsel (Uhr)', 15, 0, 23),
 )
+
+
+DEFAULT_COLORS = {
+    'title_bg': '#073c60', 'title_fg': '#ffffff',
+    'class_bg': '#103d61', 'class_fg': '#ffffff',
+    'day_bg': '#103d61', 'day_fg': '#ffffff',
+    'changed': '#ffedbf', 'coupled': '#cdebf8', 'current': '#79e64e',
+}
+
+
+def monitor_colors(profile):
+    stored = profile.get('colors')
+    if not isinstance(stored, dict):
+        return DEFAULT_COLORS.copy()
+    colors = DEFAULT_COLORS.copy()
+    for key in colors:
+        value = stored.get(key)
+        if isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+            colors[key] = value.lower()
+    return colors
 
 
 def default_profile(number):
