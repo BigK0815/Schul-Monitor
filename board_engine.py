@@ -102,6 +102,8 @@ main{height:calc(100dvh - clamp(54px,8.4vh,90px));display:grid;grid-template-col
 .detail,.compact small{font-size:var(--small);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.05}
 .compact{flex-direction:column;justify-content:center}.compact strong,.compact small{max-width:100%}
 .changed{background:var(--changed)!important}.canceled{background:#ffd6dc!important}.slot.canceled{position:relative}.cancel-cross{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+main.info-hidden{grid-template-columns:minmax(0,1fr)}
+main.info-hidden #infoboard{display:none}
 #infoboard{display:flex;flex-direction:column;min-width:0;min-height:0;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px #a4bfd144}
 #infohead{height:clamp(30px,5vh,50px);flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--navy);color:white;border-radius:7px;font-weight:700;font-size:clamp(12px,1.35vw,25px)}
 #infonote{display:none;width:100%;height:100%;padding:clamp(12px,1.5vw,28px);flex-direction:column;align-items:stretch;justify-content:flex-start;text-align:left;gap:clamp(12px,2vh,26px);background:#f2f8ff;color:#123d64;overflow:hidden;box-sizing:border-box}
@@ -273,7 +275,7 @@ function updateClock(){const now=new Date();document.getElementById('clock').tex
 let infoSlides=[],infoIndex=0,infoSignature='',currentInfoKey='';
 function allInfoSlides(){
  const full=infoSlides.filter(slide=>slide.mode==='fullscreen');
- return full.length?full:[...notePages(),...infoSlides.map(slide=>({kind:'pdf',...slide}))];
+ return full.length || BOARD_SETTINGS.hide_info ? full : [...notePages(),...infoSlides.map(slide=>({kind:'pdf',...slide}))];
 }
 function refreshInfoDisplay(){
  const slides=allInfoSlides();
@@ -699,6 +701,7 @@ def home():
         'visible_periods': SETTINGS['visible_periods'],
         'start_grade': int(SETTINGS['start_grade']),
         'pdf_seconds': int(SETTINGS['pdf_seconds']),
+        'hide_info': bool(SETTINGS.get('hide_info')),
     }
     from markupsafe import escape
     colors = monitor_colors(SETTINGS)
@@ -708,7 +711,10 @@ def home():
     html = HTML.replace('__COLOR_VARS__', color_vars)
     html = html.replace('__BOARD_SETTINGS_JSON__', json.dumps(client_settings))
     html = html.replace('__SCHOOL_NAME__', str(escape(SETTINGS.get('school_name') or 'Musterschule')))
-    html = html.replace('<main>', f'<main style="--info-width:{int(SETTINGS['info_width'])}vw">', 1)
+    if client_settings['hide_info']:
+        html = html.replace('<main>', '<main class="info-hidden">', 1)
+    else:
+        html = html.replace('<main>', f'<main style="--info-width:{int(SETTINGS['info_width'])}vw">', 1)
     return render_template_string(html)
 
 @app.get('/assets/schullogo.png')
@@ -795,6 +801,9 @@ def board_announcement(number):
 @app.get('/api/info/list')
 def info_list():
     slides = active_slides(SETTINGS.get('id', 1))
+    if SETTINGS.get('hide_info'):
+        slides = [slide for slide in slides if slide['mode'] == 'fullscreen']
+        return jsonify({'slides': slides}), 200, {'Cache-Control': 'no-store, max-age=0'}
     for file in info_files():
         try:
             with fitz.open(file) as doc:

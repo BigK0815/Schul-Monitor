@@ -101,9 +101,10 @@ def logo_response(custom_logo=''):
 
 
 def editor_app(password, profiles, school_logo=''):
-    monitors = [{key: item[key] for key in ('id', 'name', 'board_width', 'board_height', 'info_width')}
-                for item in profiles]
+    monitors = [{**{key: item[key] for key in ('id', 'name', 'board_width', 'board_height', 'info_width')},
+                 'hide_info': bool(item.get('hide_info'))} for item in profiles]
     monitor_ids = {item['id'] for item in monitors}
+    info_monitor_ids = {item['id'] for item in monitors if not item['hide_info']}
     app = Flask(__name__, template_folder=str(ROOT / 'editor'))
     app.config.update(SECRET_KEY=secrets.token_bytes(32), MAX_CONTENT_LENGTH=12 * 1024 * 1024,
                       SESSION_COOKIE_NAME='schulboard_redaktion', SESSION_COOKIE_SAMESITE='Strict',
@@ -193,6 +194,8 @@ def editor_app(password, profiles, school_logo=''):
                 raise ValueError
         except (KeyError, ValueError, TypeError, AttributeError):
             abort(400, 'Titel, Inhalt und gültigen Anzeigezeitraum eingeben.')
+        if mode == 'info' and (not info_monitor_ids or set(targets) - info_monitor_ids):
+            abort(400, 'Bitte Zielmonitore mit sichtbarem Infoteil auswählen.')
         values = (title, start.isoformat(), end.isoformat(), html, secrets.token_hex(8), json.dumps(sorted(set(targets))), mode)
         with database() as db:
             if number is None:

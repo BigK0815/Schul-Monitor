@@ -39,7 +39,8 @@ def monitor_colors(profile):
 def default_profile(number):
     return {**{key: default for key, _, default, _, _ in FIELDS},
             'id': number, 'name': f'Monitor {number}', 'port': 5000 + number,
-            'visible_periods': list(range(1, 9)), 'hidden_grades': [], 'pdf_folder': ''}
+            'visible_periods': list(range(1, 9)), 'hidden_grades': [], 'pdf_folder': '',
+            'hide_info': False}
 
 
 def load_profiles(config):

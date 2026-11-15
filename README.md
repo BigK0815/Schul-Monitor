@@ -35,6 +35,8 @@ Schuleinstellungen und zwischengespeicherte Plandaten liegen lokal. Der Token wi
 
 Unter **Anzeige & PDFs → Monitorprofile** lassen sich 1 bis 10 Monitore einrichten. Pro Monitor werden Name, Port, Auflösung, Infobreite, sichtbare Stunden, Jahrgänge, Wechselzeiten und PDF-Ordner eingestellt. Die Standardports sind 5001 bis 5010. Eine bestehende Einzelmonitor-Einstellung wird als erstes Profil übernommen, einschließlich ihres Ports.
 
+Mit **Infoteil ausblenden** nutzt der Stundenplan die gesamte Breite des jeweiligen Monitors. Beim Wiedereinblenden gilt wieder die gespeicherte Infobreite. Die Web-Redaktion kann den Monitor weiterhin als Ziel für Vollbildmeldungen verwenden.
+
 Nach dem Start zeigt die Verwaltung die Adressen an. Auf jedem Monitor wird die URL seines Profils im Vollbildbrowser geöffnet. Die Monitore verwenden denselben Datenabruf für den Stundenplan.
 
 ## Redaktion für Infos & Termine

@@ -217,7 +217,8 @@ class Window:
             self.profile_colors.append(monitor_colors(model))
             model.pop('colors', None)
             self.profile_vars.append({
-                key: tk.StringVar(value=','.join(map(str, value)) if isinstance(value, list) else str(value))
+                key: (tk.BooleanVar(value=value) if key == 'hide_info' else
+                      tk.StringVar(value=','.join(map(str, value)) if isinstance(value, list) else str(value)))
                 for key, value in model.items()
             })
         self.build_color_page(self.pages['Farben'])
@@ -699,6 +700,8 @@ class Window:
             if key == 'pdf_folder':
                 ttk.Button(self.monitor_panel, text='Auswählen …',
                            command=lambda: self.choose_monitor_folder(model[key])).grid(row=row, column=2)
+        ttk.Checkbutton(self.monitor_panel, text='Infoteil ausblenden', variable=model['hide_info']).grid(
+            row=len(fields), column=0, columnspan=3, sticky='w', pady=(8, 0))
         self.viewport.bind_controls(self.monitor_panel)
         self.viewport.after_idle(self.viewport.refresh)
 

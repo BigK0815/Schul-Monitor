@@ -29,10 +29,17 @@ function setupEditor() {
     const monitors = JSON.parse(document.body.dataset.monitors);
     const boxes = [...document.querySelectorAll('.target')];
     const clamp = (min, value, max) => Math.min(max, Math.max(min, value));
-    const targets = () => boxes.filter(box => box.checked).map(box => Number(box.value));
-    const selectedMonitors = () => $('allTargets').checked ? monitors : monitors.filter(item => targets().includes(item.id));
+    const eligibleMonitors = () => $('mode').value === 'fullscreen' ? monitors : monitors.filter(item => !item.hide_info);
+    const selectedMonitors = () => eligibleMonitors().filter(item =>
+        $('allTargets').checked || boxes.some(box => box.checked && Number(box.value) === item.id));
     function scalePreview() {
-        const monitor = monitors.find(item => item.id === Number($('previewMonitor').value)) || monitors[0];
+        const monitor = selectedMonitors().find(item => item.id === Number($('previewMonitor').value));
+        $('stage').hidden = !monitor;
+        if (!monitor) {
+            $('dimensions').textContent = 'Kein passender Zielmonitor ausgewählt';
+            $('fit').textContent = '';
+            return;
+        }
         const {board_width: width, board_height: height, info_width: info} = monitor;
         const full = $('mode').value === 'fullscreen';
         const panelWidth = full ? width : width * info / 100;
@@ -52,13 +59,15 @@ function setupEditor() {
         const available = selectedMonitors();
         $('previewMonitor').replaceChildren(...available.map(item => new Option(item.name, item.id)));
         if (available.some(item => String(item.id) === previous)) $('previewMonitor').value = previous;
-        boxes.forEach(box => { box.disabled = $('allTargets').checked; });
+        const eligible = new Set(eligibleMonitors().map(item => item.id));
+        boxes.forEach(box => { box.disabled = $('allTargets').checked || !eligible.has(Number(box.value)); });
         scalePreview();
         schedule();
     }
     window.addEventListener('resize', scalePreview);
     $('targets').onchange = updateTargets;
-    $('mode').onchange = $('previewMonitor').onchange = () => { scalePreview(); schedule(); };
+    $('mode').onchange = updateTargets;
+    $('previewMonitor').onchange = () => { scalePreview(); schedule(); };
 
     let currentId = null, selectedImage = null, selection = null, timer, sequence = 0;
     const today = new Date().toLocaleDateString('sv-SE');
@@ -98,6 +107,7 @@ function setupEditor() {
         return fits;
     }
     async function updatePreview() {
+        if (!selectedMonitors().length) return false;
         const revision = ++sequence;
         const result = await api('preview', 'POST', {html: html()});
         if (revision !== sequence) return false;
@@ -280,7 +290,7 @@ function setupEditor() {
         clearTimeout(timer);
         try {
             const available = selectedMonitors();
-            if (!available.length) throw Error('Bitte mindestens einen Zielmonitor auswählen.');
+            if (!available.length) throw Error('Bitte mindestens einen für diese Darstellung verfügbaren Zielmonitor auswählen.');
             const original = $('previewMonitor').value;
             try {
                 for (const item of available) {
@@ -295,7 +305,7 @@ function setupEditor() {
             }
             const path = currentId ? 'announcements/' + currentId : 'announcements';
             await api(path, currentId ? 'PUT' : 'POST', {
-                targets: $('allTargets').checked ? [] : targets(), mode: $('mode').value,
+                targets: $('allTargets').checked ? [] : available.map(item => item.id), mode: $('mode').value,
                 title: $('title').value, starts: $('starts').value, ends: $('ends').value, html: html(),
             });
             reset();
