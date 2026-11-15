@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ school }} · {{ profile }}</title>
+<link rel="icon" href="/assets/schullogo.png" type="image/png">
+<style>
+* { box-sizing: border-box }
+body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto minmax(0,1fr) auto;
+       background: #eaf3fc; color: #14263a; font-family: 'Segoe UI', Arial, sans-serif }
+header { display: flex; align-items: center; gap: 1.1vw; padding: 6px 1.3vw;
+         background: {{ colors.title_bg }}; color: {{ colors.title_fg }} }
+header img { height: clamp(36px, 7vh, 76px); max-width: 8vw; object-fit: contain;
+             background: white; border-radius: 6px; padding: 3px }
+h1 { margin: 0; font-size: clamp(16px, 2.35vw, 43px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+header span { margin-left: auto; font-size: clamp(12px, 1.65vw, 31px); font-weight: 650 }
+main { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); min-height: 0;
+       gap: .7vw; padding: .8vw .8vw 0 }
+.panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
+         border-radius: 8px; background: white; border: 1px solid #b4cce0 }
+h2 { margin: 0; padding: .7vh .8vw; background: {{ colors.day_bg }}; color: {{ colors.day_fg }};
+     font-size: clamp(14px, 2vw, 38px); font-weight: 700; line-height: 1.25 }
+iframe { border: 0; width: 100%; flex: 1; min-height: 0 }
+#viewport { flex: 1; min-height: 0; overflow: hidden }
+#list { --entry: clamp(13px, 1.24vw, 25px); --padding: .8vh }
+#list[data-size="Klein"] { --entry: clamp(11px, 1vw, 20px); --padding: .42vh }
+#list[data-size="Groß"] { --entry: clamp(15px, 1.52vw, 31px); --padding: 1.1vh }
+.week, .entry, #status { padding: var(--padding) .8vw; font-size: var(--entry); line-height: 1.22; overflow-wrap: anywhere }
+.week { margin: 0; font-weight: 700; background: #cde2f6 }
+.entry:nth-of-type(even) { background: #eef6ff }
+.entry strong, .entry span { display: block }
+.entry span { font-size: .9em }
+#status { margin: 0; font-size: clamp(10px,1.05vw,20px); background: #fff0c4 }
+footer { padding: .55vh .9vw; text-align: right; font-size: clamp(10px,.9vw,17px) }
+</style>
+</head>
+<body>
+<header><img src="/assets/schullogo.png" alt=""><h1>{{ school }}</h1><span>{{ profile }}</span></header>
+<main>
+  <section class="panel"><h2>Heute</h2>
+    <iframe src="{{ today }}" title="Vertretungsplan Heute" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>
+  </section>
+  <section class="panel"><h2>Morgen</h2>
+    <iframe src="{{ tomorrow }}" title="Vertretungsplan Morgen" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>
+  </section>
+  <section class="panel"><h2>Nächste Termine</h2>
+    <p id="status" hidden></p>
+    <div id="viewport"><div id="list" data-size="{{ size }}"></div></div>
+  </section>
+</main>
+<footer>© 2026 Robert Kettmann</footer>
+<script>
+const mode = {{ mode|tojson }};
+const wait = {{ wait|tojson }} * 1000;
+const speed = {{ speed|tojson }};
+const viewport = document.querySelector('#viewport');
+const list = document.querySelector('#list');
+const statusBanner = document.querySelector('#status');
+let previous, timer, frame;
+
+function restart() {
+  clearTimeout(timer);
+  cancelAnimationFrame(frame);
+  viewport.scrollTop = 0;
+  list.style.paddingBottom = '';
+  for (const item of list.children) item.style.visibility = '';
+  const height = viewport.clientHeight;
+  if (!height || list.scrollHeight <= height || mode === 'Statisch') return;
+  if (mode === 'Blättern') {
+    const pages = [0];
+    const items = [...list.children];
+    items.forEach((item, index) => {
+      const top = item.offsetTop - list.offsetTop;
+      const last = item.classList.contains('week') ? items[index + 1] || item : item;
+      const end = last.offsetTop - list.offsetTop + last.offsetHeight;
+      if (end > pages.at(-1) + height && top > pages.at(-1)) pages.push(top);
+    });
+    list.style.paddingBottom = Math.max(0, pages.at(-1) + height - list.scrollHeight) + 'px';
+    let page = 0;
+    function showPage() {
+      const start = pages[page];
+      const end = pages[page + 1] ?? Infinity;
+      for (const item of items) {
+        const top = item.offsetTop - list.offsetTop;
+        item.style.visibility = top >= start && top < end ? '' : 'hidden';
+      }
+      viewport.scrollTop = start;
+      timer = setTimeout(() => {
+        page = (page + 1) % pages.length;
+        showPage();
+      }, wait);
+    }
+    showPage();
+  } else {
+    function scroll() {
+      const start = performance.now();
+      function step(now) {
+        const end = list.scrollHeight - viewport.clientHeight;
+        const position = Math.min(end, (now - start) * speed / 1000);
+        viewport.scrollTop = position;
+        if (position < end) frame = requestAnimationFrame(step);
+        else timer = setTimeout(restart, 3000);
+      }
+      frame = requestAnimationFrame(step);
+    }
+    timer = setTimeout(scroll, 3000);
+  }
+}
+
+function addText(parent, tag, text, className = '') {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+async function updateCalendar() {
+  try {
+    const response = await fetch('/api/lehrerzimmer/termine', {cache: 'no-store'});
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    statusBanner.hidden = !data.stale;
+    statusBanner.textContent = data.groups.length ? 'Kalender vorübergehend nicht erreichbar · letzter Stand' :
+                                               'Kalender vorübergehend nicht erreichbar';
+    const snapshot = JSON.stringify(data);
+    if (snapshot === previous) return;
+    previous = snapshot;
+    list.replaceChildren();
+    for (const week of data.groups) {
+      addText(list, 'h3', week.title, 'week');
+      for (const event of week.entries) {
+        const entry = addText(list, 'article', '', 'entry');
+        addText(entry, 'strong', event.title);
+        addText(entry, 'span', event.when);
+      }
+    }
+    if (!data.groups.length && !data.stale) addText(list, 'div', 'Keine anstehenden Termine', 'entry');
+    restart();
+  } catch {
+    statusBanner.hidden = false;
+    statusBanner.textContent = 'Kalender vorübergehend nicht erreichbar';
+  }
+}
+
+new ResizeObserver(restart).observe(viewport);
+updateCalendar();
+setInterval(updateCalendar, 60000);
+setInterval(() => {
+  for (const plan of document.querySelectorAll('iframe')) plan.src = plan.getAttribute('src');
+}, 300000);
+</script>
+</body>
+</html>

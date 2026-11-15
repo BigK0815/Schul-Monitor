@@ -12,6 +12,8 @@ from schuldaten import SchoolData, timetable_for_day
 from monitorprofile import DEFAULT_COLORS, monitor_colors
 from redaktion import ROOT, active_slides, announcement_html, logo_response
 
+from lehrerzimmer import calendar_response, teacher_board
+
 from flask import Flask, jsonify, render_template_string, Response, abort, send_file
 
 DEFAULT_SETTINGS = {'switch_seconds':15,'course_seconds':4,'cutoff_hour':15,'start_grade':5,'display_rows':2,'info_width':33,'visible_periods':list(range(1, 9)),'pdf_folder':'','pdf_seconds':12,'group_mappings':{},'group_name_display':None,'group_custom_names':{},'hidden_groups':[],'hidden_grades':[],'school_name':'Musterschule','school_logo':'','automatic_group_mapping':False}
@@ -27,6 +29,11 @@ school_data = None
 
 def monitor_app(settings):
     def application(environ, start_response):
+        if settings.get('teacher_mode'):
+            if environ.get('REMOTE_ADDR') not in ('127.0.0.1', '::1', settings.get('teacher_client') or '127.0.0.1'):
+                return Response(status=403)(environ, start_response)
+            if environ.get('PATH_INFO') not in ('/', '/assets/schullogo.png', '/api/lehrerzimmer/termine'):
+                return Response(status=404)(environ, start_response)
         token = monitor_context.set(settings)
         try:
             return app(environ, start_response)
@@ -691,6 +698,8 @@ def build_week(days, plans, substitutions, automatic_mapping, grades=None):
 
 @app.get('/')
 def home():
+    if SETTINGS.get('teacher_mode'):
+        return teacher_board(SETTINGS)
     import json
     client_settings = {
         'switch_seconds': int(SETTINGS['switch_seconds']),
@@ -714,6 +723,13 @@ def home():
     else:
         html = html.replace('<main>', f'<main style="--info-width:{int(SETTINGS['info_width'])}vw">', 1)
     return render_template_string(html)
+
+@app.get('/api/lehrerzimmer/termine')
+def teacher_calendar():
+    if not SETTINGS.get('teacher_mode'):
+        abort(404)
+    return calendar_response(SETTINGS)
+
 
 @app.get('/assets/schullogo.png')
 def school_logo():

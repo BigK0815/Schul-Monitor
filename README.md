@@ -45,6 +45,9 @@ Mit **Infoteil ausblenden** nutzt der Stundenplan die gesamte Breite des jeweili
 
 Nach dem Start zeigt die Verwaltung die Adressen an. Auf jedem Monitor wird die URL seines Profils im Vollbildbrowser geöffnet. Die Monitore verwenden denselben Datenabruf für den Stundenplan.
 
+
+Für einen Monitor im Lehrerzimmer unter **Anzeige & PDFs → Monitorprofile** die **Lehrerzimmer-Ansicht** aktivieren. Dort die beiden Anzeigelinks für heute und morgen, die OPAL-iCal-Adresse sowie Wochenvorschau, Seitenwechsel oder Scrolltempo und Schriftgröße einstellen. Für die Anzeige von einem separaten PC im Schulnetz wird dessen IPv4-Adresse im Profil hinterlegt. Die Einrichtung steht im Handbuch auf Seite 9.
+
 ## Redaktion für Infos & Termine
 
 1. Unter **API & Server → Redaktion** die Web-Redaktion aktivieren. Der voreingestellte Port ist **8081**. Board und Redaktion benötigen unterschiedliche Ports.

@@ -17,7 +17,7 @@ from waitress import create_server
 import board_engine
 import updater
 from redaktion import editor_app
-from monitorprofile import DEFAULT_COLORS, FIELDS, default_profile, load_profiles, monitor_colors, validate_profiles
+from monitorprofile import DEFAULT_COLORS, FIELDS, TEACHER_FIELDS, default_profile, load_profiles, monitor_colors, validate_profiles
 from verwaltungsstil import SettingsViewport, apply_style, card, toggle, flow_buttons
 
 if os.name == 'nt':
@@ -217,7 +217,7 @@ class Window:
             self.profile_colors.append(monitor_colors(model))
             model.pop('colors', None)
             self.profile_vars.append({
-                key: (tk.BooleanVar(value=value) if key == 'hide_info' else
+                key: (tk.BooleanVar(value=value) if key in ('hide_info', 'teacher_mode') else
                       tk.StringVar(value=','.join(map(str, value)) if isinstance(value, list) else str(value)))
                 for key, value in model.items()
             })
@@ -702,6 +702,20 @@ class Window:
                            command=lambda: self.choose_monitor_folder(model[key])).grid(row=row, column=2)
         ttk.Checkbutton(self.monitor_panel, text='Infoteil ausblenden', variable=model['hide_info']).grid(
             row=len(fields), column=0, columnspan=3, sticky='w', pady=(8, 0))
+        ttk.Checkbutton(self.monitor_panel, text='Lehrerzimmer-Ansicht', variable=model['teacher_mode'],
+                        command=self.show_monitor).grid(
+            row=len(fields) + 1, column=0, columnspan=3, sticky='w', pady=(8, 0))
+        if model['teacher_mode'].get():
+            for row, (key, label, _, choices) in enumerate(TEACHER_FIELDS, len(fields) + 2):
+                ttk.Label(self.monitor_panel, text=label, style='Card.TLabel').grid(
+                    row=row, column=0, sticky='w', padx=(0, 8), pady=3)
+                if choices:
+                    control = ttk.Combobox(self.monitor_panel, textvariable=model[key],
+                                           values=choices, state='readonly')
+                else:
+                    control = ttk.Entry(self.monitor_panel, textvariable=model[key],
+                                        show='•' if key == 'teacher_calendar' else '')
+                control.grid(row=row, column=1, sticky='ew', pady=3)
         self.viewport.bind_controls(self.monitor_panel)
         self.viewport.after_idle(self.viewport.refresh)
 
@@ -764,7 +778,7 @@ class Window:
                 raise ValueError('Redaktionsport muss zwischen 1024 und 65535 liegen.')
             cfg['monitors'] = self.monitor_settings()
             validate_profiles(cfg['monitors'], cfg['editor_port'] if cfg['editor_enabled'] else None)
-            if self.autostart.get() and not self.get_token():
+            if self.autostart.get() and any(not item.get('teacher_mode') for item in cfg['monitors']) and not self.get_token():
                 raise ValueError('Für den Windows-Autostart bitte einen API-Token speichern.')
             password = self.editor_password.get()
             if cfg['editor_enabled'] and not (password or keyring.get_password(SERVICE, EDITOR_ACCOUNT)):
@@ -811,18 +825,19 @@ class Window:
             return
         try:
             token = keyring.get_password(SERVICE, ACCOUNT)
-            if not token:
-                raise ValueError('Bitte API-Token eingeben und speichern.')
             profiles = load_profiles(self.config)
+            if not token and any(not item.get('teacher_mode') for item in profiles):
+                raise ValueError('Bitte API-Token eingeben und speichern.')
             validate_profiles(profiles, self.config['editor_port'] if self.config['editor_enabled'] else None)
-            os.environ['BESTE_TOKEN'] = token
+            os.environ['BESTE_TOKEN'] = token or ''
             with board_engine.lock:
                 board_engine.cache.clear()
             host = '0.0.0.0' if self.config['lan'] else '127.0.0.1'
             for profile in profiles:
                 settings = {**board_engine.DEFAULT_SETTINGS, **self.config, **profile}
                 settings['hidden_grades'] = sorted(set(self.config['hidden_grades']) | set(profile['hidden_grades']))
-                self.servers.append(create_server(board_engine.monitor_app(settings), host=host,
+                profile_host = host if not profile.get('teacher_mode') or profile['teacher_client'] else '127.0.0.1'
+                self.servers.append(create_server(board_engine.monitor_app(settings), host=profile_host,
                                                   port=profile['port'], threads=4))
             if self.config['editor_enabled']:
                 password = keyring.get_password(SERVICE, EDITOR_ACCOUNT)
@@ -842,7 +857,8 @@ class Window:
         self.stop_btn.configure(state='normal')
         self.status.set('Server läuft')
         address = '<IP-des-Servers>' if self.config['lan'] else '127.0.0.1'
-        links = [f"{item['name']}: http://{address}:{item['port']}" for item in profiles]
+        links = [f"{item['name']}: http://{address if not item.get('teacher_mode') or item['teacher_client'] else '127.0.0.1'}:{item['port']}"
+                 for item in profiles]
         if self.editor_server:
             links.append(f"Redaktion: http://{address}:{self.config['editor_port']}")
             threading.Thread(target=self.serve, args=(self.editor_server,), daemon=True).start()
